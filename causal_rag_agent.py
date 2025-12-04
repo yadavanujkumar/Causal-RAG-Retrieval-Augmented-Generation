@@ -13,8 +13,7 @@ import chromadb
 from chromadb.config import Settings
 import pandas as pd
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
@@ -135,15 +134,21 @@ def initialize_vector_store():
         )
         documents.append(doc)
     
-    # Initialize OpenAI embeddings
-    embeddings = OpenAIEmbeddings()
+    # Initialize OpenAI embeddings with error handling
+    try:
+        embeddings = OpenAIEmbeddings()
+    except Exception as e:
+        raise RuntimeError(f"Failed to initialize OpenAI embeddings. Please check your API key. Error: {str(e)}")
+    
+    # Get persistence directory from environment or use default
+    persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
     
     # Create ChromaDB vector store
     vectorstore = Chroma.from_documents(
         documents=documents,
         embedding=embeddings,
         collection_name="causal_knowledge",
-        persist_directory="./chroma_db"
+        persist_directory=persist_dir
     )
     
     return vectorstore
@@ -159,12 +164,15 @@ def create_causal_rag_chain(vectorstore):
     Returns:
         RetrievalQA: Configured RAG chain for causal reasoning
     """
-    # Initialize LLM (GPT-3.5-turbo)
-    llm = ChatOpenAI(
-        model_name="gpt-3.5-turbo",
-        temperature=0.3,  # Lower temperature for more focused reasoning
-        max_tokens=1000
-    )
+    # Initialize LLM (GPT-3.5-turbo) with error handling
+    try:
+        llm = ChatOpenAI(
+            model_name="gpt-3.5-turbo",
+            temperature=0.3,  # Lower temperature for more focused reasoning
+            max_tokens=1000
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to initialize ChatOpenAI. Please check your API key. Error: {str(e)}")
     
     # Create custom prompt template
     prompt = PromptTemplate(
@@ -290,11 +298,12 @@ def main():
         else:
             with st.spinner("🔄 Analyzing causal relationships..."):
                 try:
-                    # Initialize vector store
-                    vectorstore = initialize_vector_store()
+                    # Initialize vector store (cached in session state)
+                    if 'vectorstore' not in st.session_state:
+                        st.session_state.vectorstore = initialize_vector_store()
                     
                     # Create RAG chain
-                    qa_chain = create_causal_rag_chain(vectorstore)
+                    qa_chain = create_causal_rag_chain(st.session_state.vectorstore)
                     
                     # Get answer
                     result = qa_chain({"query": user_question})
